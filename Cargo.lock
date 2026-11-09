@@ -2965,7 +2965,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "optirar-cli"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2985,7 +2985,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-core"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2994,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-desktop"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "eframe",
@@ -3006,7 +3006,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-engine"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "crossbeam-channel",
  "optirar-core",
@@ -3023,7 +3023,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-formats"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "flate2",
  "optirar-core",
@@ -3042,7 +3042,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-gui"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "crossbeam-channel",
  "drag",
@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-index"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "optirar-core",
  "serde",
@@ -3071,7 +3071,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-integrity"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "blake3",
  "crc32fast",
@@ -3084,7 +3084,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-io"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "crossbeam-channel",
  "memmap2",
@@ -3094,7 +3094,7 @@ dependencies = [
 
 [[package]]
 name = "optirar-security"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "optirar-core",
  "tracing",
