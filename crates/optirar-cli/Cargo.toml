@@ -1,0 +1,27 @@
+[package]
+name = "optirar-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "optirar"
+path = "src/main.rs"
+
+[dependencies]
+optirar-core.workspace = true
+optirar-io.workspace = true
+optirar-security.workspace = true
+optirar-integrity.workspace = true
+optirar-index.workspace = true
+optirar-formats.workspace = true
+optirar-engine.workspace = true
+
+clap.workspace = true
+indicatif.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

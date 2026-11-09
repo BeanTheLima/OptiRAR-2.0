@@ -1,0 +1,18 @@
+[package]
+name = "optirar-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "optirar-desktop"
+path = "src/main.rs"
+
+[dependencies]
+optirar-core.workspace = true
+optirar-gui.workspace = true
+eframe.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true

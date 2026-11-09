@@ -1,0 +1,64 @@
+[workspace]
+members = [
+    "crates/optirar-core",
+    "crates/optirar-io",
+    "crates/optirar-security",
+    "crates/optirar-integrity",
+    "crates/optirar-index",
+    "crates/optirar-formats",
+    "crates/optirar-engine",
+    "crates/optirar-cli",
+    "crates/optirar-gui",
+    "apps/optirar-desktop",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["BreakTheBean"]
+license = "MIT"
+repository = "https://github.com/BeanTheLima/OptiRAR-2.0"
+
+[workspace.dependencies]
+optirar-core = { path = "crates/optirar-core" }
+optirar-io = { path = "crates/optirar-io" }
+optirar-security = { path = "crates/optirar-security" }
+optirar-integrity = { path = "crates/optirar-integrity" }
+optirar-index = { path = "crates/optirar-index" }
+optirar-formats = { path = "crates/optirar-formats" }
+optirar-engine = { path = "crates/optirar-engine" }
+optirar-gui = { path = "crates/optirar-gui" }
+
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rayon = "1.10"
+crossbeam-channel = "0.5"
+memmap2 = "0.9"
+crc32fast = "1.4"
+blake3 = { version = "1.5", default-features = false, features = ["pure", "std"] }
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+zip = { version = "2.2", default-features = false, features = ["deflate", "deflate64", "lzma", "aes-crypto", "time"] }
+tar = "0.4"
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+ruzstd = "0.9.1"
+sevenz-rust = { version = "0.6.1", default-features = false, features = ["compress", "aes256"] }
+unrar-rs = { version = "0.15.2", default-features = false, features = ["crypto-rust"] }
+clap = { version = "4.5", features = ["derive", "cargo"] }
+indicatif = "0.17"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.16.0"
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow"] }
+rfd = "0.15"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,22 @@
+[package]
+name = "optirar-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+optirar-core.workspace = true
+optirar-io.workspace = true
+optirar-security.workspace = true
+optirar-integrity.workspace = true
+optirar-index.workspace = true
+optirar-formats.workspace = true
+serde.workspace = true
+
+rayon.workspace = true
+crossbeam-channel.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

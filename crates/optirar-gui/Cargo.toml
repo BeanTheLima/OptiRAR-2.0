@@ -1,0 +1,26 @@
+[package]
+name = "optirar-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+optirar-core.workspace = true
+optirar-io.workspace = true
+optirar-integrity.workspace = true
+optirar-index.workspace = true
+optirar-formats.workspace = true
+optirar-engine.workspace = true
+
+eframe.workspace = true
+rfd.workspace = true
+crossbeam-channel.workspace = true
+tracing.workspace = true
+egui_extras = { version = "0.31", default-features = false, features = ["syntect", "image"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "ico"] }
+raw-window-handle = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+drag = "2.1"
+windows = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

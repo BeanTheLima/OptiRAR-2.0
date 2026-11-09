@@ -1,0 +1,23 @@
+# Rust build output
+/target/
+
+# Release bundle produced by scripts/build_release.ps1 (exe files: publish them as a GitHub Release instead)
+/dist/
+
+# Leftovers from an interrupted in-place ZIP edit
+*.optirar-tmp
+
+# Logs / debugging
+*.log
+*.pdb
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store

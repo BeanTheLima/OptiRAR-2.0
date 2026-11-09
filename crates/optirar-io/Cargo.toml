@@ -1,0 +1,12 @@
+[package]
+name = "optirar-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+optirar-core.workspace = true
+crossbeam-channel.workspace = true
+tracing.workspace = true
+memmap2.workspace = true

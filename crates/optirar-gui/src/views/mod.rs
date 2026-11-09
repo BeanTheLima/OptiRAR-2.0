@@ -1,0 +1,14 @@
+pub mod compare_view;
+pub mod dialogs;
+pub mod duplicates_view;
+pub mod hash_view;
+pub mod modal_progress;
+pub mod viewer;
+pub mod queue_view;
+pub mod settings_view;
+pub mod sidebar;
+pub mod status_bar;
+pub mod table;
+pub mod title_bar;
+pub mod toolbar;
+pub mod welcome;

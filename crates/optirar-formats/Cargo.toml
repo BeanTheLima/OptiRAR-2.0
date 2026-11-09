@@ -1,0 +1,24 @@
+[package]
+name = "optirar-formats"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+optirar-core.workspace = true
+optirar-io.workspace = true
+optirar-security.workspace = true
+optirar-integrity.workspace = true
+optirar-index.workspace = true
+
+zip.workspace = true
+tar.workspace = true
+flate2.workspace = true
+ruzstd.workspace = true
+sevenz-rust.workspace = true
+unrar-rs.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Globalization"] }
