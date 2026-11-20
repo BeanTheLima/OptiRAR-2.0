@@ -133,6 +133,49 @@ impl ArchiveReader for ZstdReader {
     fn format(&self) -> ArchiveFormat {
         ArchiveFormat::Zstd
     }
+
+    fn extract_sequential(
+        &mut self,
+        target_indices: &[usize],
+        writer_factory: &mut dyn FnMut(usize, &ArchiveEntry) -> Result<Option<Box<dyn Write>>>,
+    ) -> Result<()> {
+        let file = File::open(&self.file_path)?;
+        let mut zstd_decoder = StreamingDecoder::new(BufReader::with_capacity(256 * 1024, file))
+            .map_err(|e| OptiError::MalformedArchive(format!("ZSTD init error: {:?}", e)))?;
+
+        if self.is_tar_zst {
+            let mut archive = tar::Archive::new(zstd_decoder);
+            let target_set: std::collections::HashSet<usize> = target_indices.iter().copied().collect();
+            let mut buffer = vec![0u8; 256 * 1024];
+
+            for (idx, entry_res) in archive.entries()?.enumerate() {
+                let mut entry = entry_res?;
+                if target_set.contains(&idx) && idx < self.tar_entries.len() {
+                    if let Some(mut writer) = writer_factory(idx, &self.tar_entries[idx])? {
+                        loop {
+                            let n = entry.read(&mut buffer)?;
+                            if n == 0 {
+                                break;
+                            }
+                            writer.write_all(&buffer[..n])?;
+                        }
+                    }
+                }
+            }
+        } else if !self.tar_entries.is_empty() {
+            if let Some(mut writer) = writer_factory(0, &self.tar_entries[0])? {
+                let mut buffer = vec![0u8; 256 * 1024];
+                loop {
+                    let n = zstd_decoder.read(&mut buffer)?;
+                    if n == 0 {
+                        break;
+                    }
+                    writer.write_all(&buffer[..n])?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Zstandard writer.

@@ -1,15 +1,36 @@
-# OptiRAR 2.0
+# OptiRAR 2.0.1
 
 [![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
+[![Version](https://img.shields.io/badge/Release-v2.0.1-brightgreen.svg)](https://github.com/BeanTheLima/OptiRAR-2.0/releases/tag/v2.0.1)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-blue.svg)]()
 [![License](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-green.svg)]()
 [![Localization](https://img.shields.io/badge/Language-English%20%7C%20Ti%E1%BA%BFng%20Vi%E1%BB%87t-blueviolet.svg)]()
 
 > **"Less overhead. Faster extraction. Maximum efficiency."**
 
-**OptiRAR 2.0** is a modern, feature-rich, high-performance Windows archive management suite engineered in pure Rust for Windows 10 and Windows 11 (x64).
+**OptiRAR** is a modern, feature-rich, high-performance Windows archive management suite engineered in pure Rust for Windows 10 and Windows 11 (x64).
 
-OptiRAR 2.0 delivers a complete Fluent UI desktop redesign, Windows File Explorer right-click context menu integration, full English and Vietnamese localization, Smart Extraction, background task queuing, archive comparison diffing, multi-algorithm cryptographic hashing, duplicate file detection, and safe in-memory file previewing.
+OptiRAR delivers a complete Fluent UI desktop redesign, Windows File Explorer right-click context menu integration, full English and Vietnamese localization, Smart Extraction, background task queuing, archive comparison diffing, multi-algorithm cryptographic hashing, duplicate file detection, and safe in-memory file previewing/editing.
+
+---
+
+## What's New in OptiRAR 2.0.1
+
+1. **Fixed & Enhanced File Viewer / Editor Scrolling:**
+   - Resolved the issue where long text/code files (e.g. 500+ lines) cut off at screen borders without vertical scrolling.
+   - Constrained `egui::Window` strictly within desktop bounds (`max_size`, `.constrain(true)`) to prevent windows from expanding off-screen.
+   - Removed nested `CentralPanel` layout traps and applied explicit `.max_height(ui.available_height())` to `ScrollArea::both()`.
+   - Smooth mouse wheel scrolling, responsive scrollbar dragging, and seamless keyboard navigation (Page Up / Page Down / Arrows) across long files.
+2. **Decompression & Extraction Optimizations:**
+   - Multi-threaded parallel extraction for non-solid ZIP archives (`extract_zip_entries_parallel`) with worker pool load-balancing.
+   - Optimized streaming decompressors for solid TAR, GZIP, and 7z archives with bounded backpressure.
+   - Zero-fragmentation pre-allocated file writing (`PreallocatedFileWriter`) with direct 64KB/128KB chunk buffering.
+3. **In-Place Archive Editing & Creation:**
+   - Direct ZIP editing: add or remove entries without full recompression of untouched items.
+   - Built-in creation for ZIP and 7-Zip with optional AES-256 encryption.
+4. **Shell & Usability Refinements:**
+   - Non-elevated current-user Explorer context menus with instant uninstaller.
+   - Enhanced bilingual localization (`en-US` and `vi-VN`).
 
 ---
 

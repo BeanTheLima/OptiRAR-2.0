@@ -121,6 +121,26 @@ pub trait ArchiveReader: Send + Sync {
     fn try_clone(&self) -> Option<Box<dyn ArchiveReader>> {
         None
     }
+
+    /// Extract multiple entries sequentially in a single streaming pass.
+    ///
+    /// Formats like TAR, RAR, and 7z override this to stream in O(N) single pass
+    /// without reopening the container or seeking repeatedly.
+    fn extract_sequential(
+        &mut self,
+        target_indices: &[usize],
+        writer_factory: &mut dyn FnMut(usize, &ArchiveEntry) -> Result<Option<Box<dyn Write>>>,
+    ) -> Result<()> {
+        let entries = self.list_entries()?;
+        for &idx in target_indices {
+            if idx < entries.len() {
+                if let Some(mut writer) = writer_factory(idx, &entries[idx])? {
+                    self.extract_entry(idx, &mut *writer)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Unified trait implemented by format-specific archive writers.

@@ -20,6 +20,7 @@ optirar-engine.workspace = true
 
 clap.workspace = true
 indicatif.workspace = true
+console = "0.15"
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true

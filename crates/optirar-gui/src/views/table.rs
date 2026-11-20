@@ -287,6 +287,7 @@ pub struct TableAction {
     pub extract_selected_subfolder: bool,
     pub extract_all_dialog: bool,
     pub start_drag: bool,
+    pub copy_selected_files: bool,
     pub show_properties: bool,
 }
 
@@ -394,14 +395,18 @@ impl TableView {
         // 3. Keyboard shortcuts for the list (only when no text field has focus)
         let no_focus = ui.ctx().memory(|m| m.focused().is_none());
         if no_focus {
-            let (enter, back, select_all, delete) = ui.ctx().input_mut(|i| {
+            let (enter, back, select_all, delete, copy) = ui.ctx().input_mut(|i| {
                 (
                     i.consume_key(Modifiers::NONE, Key::Enter),
                     i.consume_key(Modifiers::NONE, Key::Backspace),
                     i.consume_key(Modifiers::COMMAND, Key::A),
                     i.consume_key(Modifiers::NONE, Key::Delete),
+                    i.consume_key(Modifiers::COMMAND, Key::C),
                 )
             });
+            if copy && !selected.is_empty() {
+                action.copy_selected_files = true;
+            }
             if delete && writable && !selected.is_empty() {
                 action.delete_selected = true;
             }
@@ -630,6 +635,10 @@ impl TableView {
             ui.close_menu();
         }
         ui.separator();
+        if ui.button(format!("📋 {}", t("ctx.copy_files"))).clicked() {
+            action.copy_selected_files = true;
+            ui.close_menu();
+        }
         if ui.button(format!("📋 {}", t("ctx.copy_name"))).clicked() {
             ui.ctx().copy_text(item.name.clone());
             ui.close_menu();

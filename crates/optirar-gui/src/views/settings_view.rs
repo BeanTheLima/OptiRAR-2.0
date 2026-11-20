@@ -86,6 +86,15 @@ impl SettingsView {
                         action.unregister_shell_clicked = true;
                     }
                 });
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+                ui.label(RichText::new(t("settings.file_associations")).strong());
+                ui.label(RichText::new(t("settings.set_default_desc")).size(12.0).color(theme::weak_text(ui)));
+                ui.add_space(4.0);
+                if ui.button(format!("🔗 {}", t("settings.set_default_archiver"))).clicked() {
+                    action.register_shell_clicked = true;
+                }
                 if let Some((ok, msg)) = shell_status_msg {
                     ui.add_space(6.0);
                     ui.label(RichText::new(msg).color(if *ok { theme::SUCCESS } else { theme::ERROR }));

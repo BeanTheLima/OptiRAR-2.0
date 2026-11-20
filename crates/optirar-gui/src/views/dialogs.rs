@@ -415,6 +415,9 @@ impl DialogsView {
                         if let Ok(meta) = std::fs::metadata(p) {
                             row("dialogs.properties.compressed_size", format!("{} ({} bytes)", format_bytes(meta.len()), meta.len()));
                         }
+                        if let Some((curr, total)) = optirar_formats::detector::FormatDetector::detect_volume_info(p) {
+                            row("dialogs.properties.volumes", format!("Part {} / {} volumes", curr, total));
+                        }
                     }
                     row("dialogs.properties.format", format!("{:?}", cat.format));
                     row("dialogs.properties.solid", yes_no(cat.is_solid));

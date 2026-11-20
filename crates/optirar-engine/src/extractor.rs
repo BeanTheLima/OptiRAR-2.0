@@ -9,6 +9,7 @@ use optirar_security::bomb::BombDetector;
 use optirar_security::path::PathSanitizer;
 use rayon::prelude::*;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -79,37 +80,46 @@ impl OptiExtractor {
         // Ensure output root directory exists
         fs::create_dir_all(&options.output_dir)?;
 
-        if is_solid {
-            // Solid Archive: Must decompress sequentially using the active reader
-            let mut bomb_detector = BombDetector::default();
+        let can_parallel = !is_solid && reader.try_clone().is_some();
 
-            for &idx in &target_indices {
+        if !can_parallel {
+            // Single-Pass Sequential Streaming Extraction (Solid or Sequential Containers: TAR, RAR, 7z, ZST)
+            let tracker_arc = Arc::new(tracker.clone());
+            let failed_entries_clone = Arc::clone(&failed_entries);
+            let total_written_clone = Arc::clone(&total_written);
+            let total_count_clone = Arc::clone(&total_count);
+
+            reader.extract_sequential(&target_indices, &mut |_idx, entry| {
                 if cancel_token.is_cancelled() {
                     return Err(OptiError::OperationCancelled);
                 }
 
-                let entry = &all_entries[idx];
                 if entry.is_directory {
-                    if let Ok(dest) = PathSanitizer::resolve_destination(&options.output_dir, &strip_rel(&entry.path, &options.strip_prefix)) {
+                    if let Ok(dest) = PathSanitizer::resolve_destination(
+                        &options.output_dir,
+                        &strip_rel(&entry.path, &options.strip_prefix),
+                    ) {
                         let _ = fs::create_dir_all(&dest);
                     }
-                    continue;
+                    return Ok(None);
                 }
 
-                let dest = match PathSanitizer::resolve_destination(&options.output_dir, &strip_rel(&entry.path, &options.strip_prefix)) {
+                let dest = match PathSanitizer::resolve_destination(
+                    &options.output_dir,
+                    &strip_rel(&entry.path, &options.strip_prefix),
+                ) {
                     Ok(p) => p,
                     Err(e) => {
-                        failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
-                        continue;
+                        failed_entries_clone.lock().unwrap().push((entry.path.clone(), e.to_string()));
+                        return Ok(None);
                     }
                 };
 
-                // Conflict check
                 if dest.exists() {
                     match options.overwrite_policy {
                         OverwritePolicy::SkipExisting => {
-                            tracker.file_done(&entry.path);
-                            continue;
+                            tracker_arc.file_done(&entry.path);
+                            return Ok(None);
                         }
                         OverwritePolicy::ErrorOnConflict => {
                             return Err(OptiError::FileAlreadyExists(dest.to_string_lossy().to_string()));
@@ -118,58 +128,40 @@ impl OptiExtractor {
                     }
                 }
 
-                let mut verifier = ChecksumVerifier::new();
-                let buffer_size = options.profile.buffer_size_bytes();
-
-                let mut preallocated_writer = match PreallocatedFileWriter::create(
+                let buffer_size = options.profile.buffer_size_bytes().max(256 * 1024);
+                let preallocated_writer = match PreallocatedFileWriter::create(
                     &dest,
                     entry.uncompressed_size,
                     buffer_size,
                 ) {
                     Ok(w) => w,
                     Err(e) => {
-                        failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
-                        continue;
+                        failed_entries_clone.lock().unwrap().push((entry.path.clone(), e.to_string()));
+                        return Ok(None);
                     }
                 };
 
-                // Stream adapter that computes checksum and tracks bomb expansion
-                let mut tracking_writer = TrackingWriter {
-                    inner: &mut preallocated_writer,
-                    verifier: &mut verifier,
-                    bomb_detector: &mut bomb_detector,
-                    tracker: &tracker,
-                    current_path: &entry.path,
-                    bytes_written: 0,
+                let writer = SequentialStreamWriter {
+                    inner: preallocated_writer,
+                    verifier: ChecksumVerifier::new(),
+                    bomb_detector: BombDetector::default(),
+                    dest_path: dest,
+                    entry_path: entry.path.clone(),
+                    expected_crc: entry.crc32,
+                    uncompressed_size: entry.uncompressed_size,
+                    keep_broken: options.keep_broken,
+                    tracker: Arc::clone(&tracker_arc),
+                    total_written: Arc::clone(&total_written_clone),
+                    total_count: Arc::clone(&total_count_clone),
+                    failed_entries: Arc::clone(&failed_entries_clone),
                 };
 
-                let extract_res = reader.extract_entry(idx, &mut tracking_writer);
+                Ok(Some(Box::new(writer)))
+            })?;
 
-                if let Err(e) = extract_res {
-                    if !options.keep_broken && dest.exists() {
-                        let _ = fs::remove_file(&dest);
-                    }
-                    failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
-                    continue;
-                }
-
-                let _ = preallocated_writer.finalize();
-
-                // Verify checksum
-                if let Err(e) = verifier.verify_crc32(&entry.path, entry.crc32) {
-                    if !options.keep_broken && dest.exists() {
-                        let _ = fs::remove_file(&dest);
-                    }
-                    failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
-                    continue;
-                }
-
-                total_written.fetch_add(entry.uncompressed_size, Ordering::Relaxed);
-                total_count.fetch_add(1, Ordering::Relaxed);
-                tracker.file_done(&entry.path);
-            }
+            tracker.finish("Finished");
         } else {
-            // Non-Solid Archive: Highly optimized parallel execution across Rayon worker pool!
+            // Non-Solid Parallel Extraction (ZIP, multi-stream containers) across Rayon worker pool!
             let worker_threads = options.profile.worker_threads();
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(worker_threads)
@@ -179,116 +171,123 @@ impl OptiExtractor {
             let archive_path_buf = path_ref.to_path_buf();
             let options_arc = Arc::new(options);
             let entries_arc = Arc::new(all_entries);
-            let tracker_arc = Arc::new(tracker);
+            let tracker_arc = Arc::new(tracker.clone());
 
             pool.install(|| {
                 target_indices.par_iter().for_each_init(
-                    // One reader per worker split instead of re-parsing the archive for every file.
                     || match reader.try_clone() {
                         Some(r) => Ok(r),
                         None => open_reader(&archive_path_buf, options_arc.password.as_deref()),
                     },
                     |thread_reader, &idx| {
-                    if cancel_token.is_cancelled() {
-                        return;
-                    }
-
-                    let entry = &entries_arc[idx];
-                    if entry.is_directory {
-                        if let Ok(dest) = PathSanitizer::resolve_destination(&options_arc.output_dir, &strip_rel(&entry.path, &options_arc.strip_prefix)) {
-                            let _ = fs::create_dir_all(&dest);
-                        }
-                        return;
-                    }
-
-                    let dest = match PathSanitizer::resolve_destination(&options_arc.output_dir, &strip_rel(&entry.path, &options_arc.strip_prefix)) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
+                        if cancel_token.is_cancelled() {
                             return;
                         }
-                    };
 
-                    if dest.exists() {
-                        match options_arc.overwrite_policy {
-                            OverwritePolicy::SkipExisting => {
-                                tracker_arc.file_done(&entry.path);
+                        let entry = &entries_arc[idx];
+                        if entry.is_directory {
+                            if let Ok(dest) = PathSanitizer::resolve_destination(
+                                &options_arc.output_dir,
+                                &strip_rel(&entry.path, &options_arc.strip_prefix),
+                            ) {
+                                let _ = fs::create_dir_all(&dest);
+                            }
+                            return;
+                        }
+
+                        let dest = match PathSanitizer::resolve_destination(
+                            &options_arc.output_dir,
+                            &strip_rel(&entry.path, &options_arc.strip_prefix),
+                        ) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
                                 return;
                             }
-                            OverwritePolicy::ErrorOnConflict => {
-                                failed_entries.lock().unwrap().push((
-                                    entry.path.clone(),
-                                    format!("File already exists: {}", dest.display()),
-                                ));
+                        };
+
+                        if dest.exists() {
+                            match options_arc.overwrite_policy {
+                                OverwritePolicy::SkipExisting => {
+                                    tracker_arc.file_done(&entry.path);
+                                    return;
+                                }
+                                OverwritePolicy::ErrorOnConflict => {
+                                    failed_entries.lock().unwrap().push((
+                                        entry.path.clone(),
+                                        format!("File already exists: {}", dest.display()),
+                                    ));
+                                    return;
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        let thread_reader = match thread_reader {
+                            Ok(r) => r,
+                            Err(e) => {
+                                failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
                                 return;
                             }
-                            _ => {}
-                        }
-                    }
+                        };
 
-                    let thread_reader = match thread_reader {
-                        Ok(r) => r,
-                        Err(e) => {
+                        let buffer_size = options_arc.profile.buffer_size_bytes().max(256 * 1024);
+                        let mut preallocated_writer = match PreallocatedFileWriter::create(
+                            &dest,
+                            entry.uncompressed_size,
+                            buffer_size,
+                        ) {
+                            Ok(w) => w,
+                            Err(e) => {
+                                failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
+                                return;
+                            }
+                        };
+
+                        let mut verifier = ChecksumVerifier::new();
+                        let mut bomb_detector = BombDetector::default();
+
+                        let mut tracking_writer = TrackingWriter {
+                            inner: &mut preallocated_writer,
+                            verifier: &mut verifier,
+                            bomb_detector: &mut bomb_detector,
+                            tracker: &tracker_arc,
+                            current_path: &entry.path,
+                            bytes_written: 0,
+                        };
+
+                        let extract_res = thread_reader.extract_entry(idx, &mut tracking_writer);
+
+                        if let Err(e) = extract_res {
+                            if !options_arc.keep_broken && dest.exists() {
+                                let _ = fs::remove_file(&dest);
+                            }
                             failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
                             return;
                         }
-                    };
 
-                    let buffer_size = options_arc.profile.buffer_size_bytes();
-                    let mut preallocated_writer = match PreallocatedFileWriter::create(
-                        &dest,
-                        entry.uncompressed_size,
-                        buffer_size,
-                    ) {
-                        Ok(w) => w,
-                        Err(e) => {
+                        let _ = preallocated_writer.finalize();
+
+                        if let Err(e) = verifier.verify_crc32(&entry.path, entry.crc32) {
+                            if !options_arc.keep_broken && dest.exists() {
+                                let _ = fs::remove_file(&dest);
+                            }
                             failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
                             return;
                         }
-                    };
 
-                    let mut verifier = ChecksumVerifier::new();
-                    let mut bomb_detector = BombDetector::default();
-
-                    let mut tracking_writer = TrackingWriter {
-                        inner: &mut preallocated_writer,
-                        verifier: &mut verifier,
-                        bomb_detector: &mut bomb_detector,
-                        tracker: &tracker_arc,
-                        current_path: &entry.path,
-                        bytes_written: 0,
-                    };
-
-                    let extract_res = thread_reader.extract_entry(idx, &mut tracking_writer);
-
-                    if let Err(e) = extract_res {
-                        if !options_arc.keep_broken && dest.exists() {
-                            let _ = fs::remove_file(&dest);
-                        }
-                        failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
-                        return;
-                    }
-
-                    let _ = preallocated_writer.finalize();
-
-                    if let Err(e) = verifier.verify_crc32(&entry.path, entry.crc32) {
-                        if !options_arc.keep_broken && dest.exists() {
-                            let _ = fs::remove_file(&dest);
-                        }
-                        failed_entries.lock().unwrap().push((entry.path.clone(), e.to_string()));
-                        return;
-                    }
-
-                    total_written.fetch_add(entry.uncompressed_size, Ordering::Relaxed);
-                    total_count.fetch_add(1, Ordering::Relaxed);
-                    tracker_arc.file_done(&entry.path);
+                        total_written.fetch_add(entry.uncompressed_size, Ordering::Relaxed);
+                        total_count.fetch_add(1, Ordering::Relaxed);
+                        tracker_arc.file_done(&entry.path);
                     },
                 );
             });
 
-            if cancel_token.is_cancelled() {
-                return Err(OptiError::OperationCancelled);
-            }
+            tracker.finish("Finished");
+        }
+
+        if cancel_token.is_cancelled() {
+            return Err(OptiError::OperationCancelled);
         }
 
         let elapsed = start_time.elapsed();
@@ -301,13 +300,15 @@ impl OptiExtractor {
             0.0
         };
 
+        let failures = failed_entries.lock().unwrap().clone();
+
         Ok(ExtractionSummary {
             archive_format: format,
             files_extracted: files_done,
             bytes_extracted: total_bytes_extracted,
             elapsed,
             average_throughput_mb_s: mb_s,
-            failed_entries: Arc::try_unwrap(failed_entries).unwrap().into_inner().unwrap(),
+            failed_entries: failures,
         })
     }
 
@@ -374,6 +375,53 @@ impl OptiExtractor {
             average_throughput_mb_s: mb_s,
             failed_entries: failed,
         })
+    }
+}
+
+struct SequentialStreamWriter {
+    inner: PreallocatedFileWriter,
+    verifier: ChecksumVerifier,
+    bomb_detector: BombDetector,
+    dest_path: std::path::PathBuf,
+    entry_path: String,
+    expected_crc: Option<u32>,
+    uncompressed_size: u64,
+    keep_broken: bool,
+    tracker: Arc<ProgressTracker>,
+    total_written: Arc<AtomicU64>,
+    total_count: Arc<AtomicUsize>,
+    failed_entries: Arc<Mutex<Vec<(String, String)>>>,
+}
+
+impl std::io::Write for SequentialStreamWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.verifier.update(&buf[..n]);
+        let _ = self.bomb_detector.record_bytes(n as u64 / 2 + 1, n as u64);
+        self.tracker.record_bytes(n as u64, &self.entry_path);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl Drop for SequentialStreamWriter {
+    fn drop(&mut self) {
+        let _ = self.inner.flush();
+
+        if let Err(e) = self.verifier.verify_crc32(&self.entry_path, self.expected_crc) {
+            if !self.keep_broken && self.dest_path.exists() {
+                let _ = fs::remove_file(&self.dest_path);
+            }
+            self.failed_entries.lock().unwrap().push((self.entry_path.clone(), e.to_string()));
+            return;
+        }
+
+        self.total_written.fetch_add(self.uncompressed_size, Ordering::Relaxed);
+        self.total_count.fetch_add(1, Ordering::Relaxed);
+        self.tracker.file_done(&self.entry_path);
     }
 }
 

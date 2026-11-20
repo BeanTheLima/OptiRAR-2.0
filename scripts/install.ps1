@@ -55,7 +55,7 @@ New-Shortcut (Join-Path ([Environment]::GetFolderPath("SendTo")) (L "OptiRAR (ex
 $size = [int]((Get-ChildItem $InstallDir -Recurse | Measure-Object Length -Sum).Sum / 1KB)
 $u = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Microsoft\Windows\CurrentVersion\Uninstall\OptiRAR")
 $u.SetValue("DisplayName", "OptiRAR")
-$u.SetValue("DisplayVersion", "2.0.0")
+$u.SetValue("DisplayVersion", "2.0.1")
 $u.SetValue("Publisher", "OptiRAR")
 $u.SetValue("DisplayIcon", "$Gui,0")
 $u.SetValue("InstallLocation", $InstallDir)

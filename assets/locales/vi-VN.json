@@ -2,7 +2,7 @@
   "app": {
     "name": "OptiRAR",
     "tagline": "Ít tiêu tốn tài nguyên. Giải nén nhanh hơn. Hiệu suất tối đa.",
-    "version": "2.0.0"
+    "version": "2.0.1"
   },
   "nav": {
     "home": "Trang chủ",
@@ -112,6 +112,7 @@
       "compressed_size": "Dung lượng sau nén:",
       "ratio": "Tỷ lệ nén dữ liệu:",
       "addressable": "Địa chỉ 64-bit:",
+      "volumes": "Tệp nén nhiều phần (Volume):",
       "close": "Đóng",
       "location": "Vị trí:"
     },
@@ -206,6 +207,9 @@
     "shell_desc": "Thêm menu OptiRAR (Mở, Giải nén..., Giải nén tại đây, Giải nén vào thư mục, Kiểm tra, Thêm vào tệp nén) vào menu chuột phải và cho phép chọn OptiRAR trong \"Mở bằng\". Trên Windows 11 nằm trong \"Hiển thị thêm tùy chọn\".",
     "register_shell": "Đăng ký menu chuột phải & liên kết tệp",
     "unregister_shell": "Gỡ menu chuột phải",
+    "file_associations": "Liên kết định dạng tệp (Trình giải nén mặc định)",
+    "set_default_archiver": "Liên kết OptiRAR với toàn bộ định dạng tệp nén",
+    "set_default_desc": "Đặt OptiRAR làm trình mở mặc định khi nhấp đúp các tệp .zip, .rar, .7z, .tar, .gz, .zst.",
     "shell_status_enabled": "Menu chuột phải Explorer đã được đăng ký và hoạt động.",
     "shell_status_disabled": "Menu chuột phải Explorer hiện chưa được đăng ký.",
     "advanced": "Nâng cao",
@@ -239,6 +243,7 @@
     "extract_to": "Giải nén đến...",
     "extract_here": "Giải nén tại đây (cạnh tệp nén)",
     "extract_to_folder": "Giải nén vào \"{name}\\\"",
+    "copy_files": "Sao chép tệp vào bộ nhớ tạm (Ctrl+C)",
     "copy_name": "Sao chép tên",
     "copy_path": "Sao chép đường dẫn trong tệp nén",
     "properties": "Thuộc tính tệp nén",
@@ -271,7 +276,8 @@
     "shell_failed": "Đăng ký thất bại: {error}",
     "updating": "Đang cập nhật {name}...",
     "archive_updated": "Đã cập nhật tệp nén.",
-    "saved_to": "Đã lưu vào {path}"
+    "saved_to": "Đã lưu vào {path}",
+    "copied_to_clipboard": "Đã sao chép {count} tệp vào bộ nhớ tạm. Dán vào Explorer bằng Ctrl+V."
   },
   "queue": {
     "clear_completed": "Xoá tác vụ đã xong",

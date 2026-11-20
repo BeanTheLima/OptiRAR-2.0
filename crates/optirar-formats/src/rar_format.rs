@@ -103,4 +103,28 @@ impl ArchiveReader for RarReader {
     fn format(&self) -> ArchiveFormat {
         self.format
     }
+
+    fn extract_sequential(
+        &mut self,
+        target_indices: &[usize],
+        writer_factory: &mut dyn FnMut(usize, &ArchiveEntry) -> Result<Option<Box<dyn Write>>>,
+    ) -> Result<()> {
+        let file = File::open(&self.file_path)?;
+        let mut archive = RarArchive::open(file)
+            .map_err(|e| OptiError::MalformedArchive(format!("RAR open error: {:?}", e)))?;
+
+        for &idx in target_indices {
+            if idx < self.entries.len() {
+                if let Some(mut writer) = writer_factory(idx, &self.entries[idx])? {
+                    let entry = archive
+                        .by_index(idx)
+                        .map_err(|e| OptiError::MalformedArchive(format!("RAR seek error: {:?}", e)))?;
+                    entry
+                        .copy_to(&mut *writer)
+                        .map_err(|e| OptiError::MalformedArchive(format!("RAR extraction error: {:?}", e)))?;
+                }
+            }
+        }
+        Ok(())
+    }
 }

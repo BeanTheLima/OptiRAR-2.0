@@ -1,7 +1,7 @@
 //! Built-in viewer/editor for archive entries: syntax-highlighted code with line numbers,
 //! outline, find and save-back; images; hex dump for binaries.
 
-use eframe::egui::{self, text::CCursor, text::CCursorRange, Key, Modifiers, RichText, Vec2};
+use eframe::egui::{self, text::CCursor, text::CCursorRange, Align2, Key, Modifiers, RichText, Vec2};
 use egui_extras::syntax_highlighting::{self, CodeTheme};
 use optirar_core::i18n::t_format;
 use optirar_core::t;
@@ -357,35 +357,53 @@ impl ViewerState {
         let title = format!("{}{}", if modified { "● " } else { "" }, self.path.rsplit('/').next().unwrap_or(&self.path));
         let mut open = true;
 
+        let scr = ctx.screen_rect();
+        let max_w = (scr.width() - 40.0).max(400.0);
+        let max_h = (scr.height() - 70.0).max(300.0);
+        let def_w = 960.0f32.min(max_w);
+        let def_h = 640.0f32.min(max_h);
+
         egui::Window::new(title)
             .id(egui::Id::new("optirar_viewer"))
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
-            .default_size(Vec2::new(960.0, 640.0))
+            .default_size(Vec2::new(def_w, def_h))
+            .min_size(Vec2::new(480.0f32.min(max_w), 320.0f32.min(max_h)))
+            .max_size(Vec2::new(max_w, max_h))
+            .constrain(true)
+            .pivot(Align2::CENTER_CENTER)
+            .default_pos(scr.center())
             .show(ctx, |ui| {
                 self.toolbar(ui, &mut action);
                 ui.separator();
+                let avail_h = ui.available_height();
                 match &mut self.content {
                     ViewerContent::Image { bytes } => {
                         let uri = format!("bytes://optirar/{}/{}", self.index, self.path);
                         let img = egui::Image::from_bytes(uri, bytes.clone());
                         if self.real_size {
-                            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                                ui.add(img.fit_to_original_size(1.0));
-                            });
+                            egui::ScrollArea::both()
+                                .auto_shrink([false, false])
+                                .max_height(avail_h)
+                                .show(ui, |ui| {
+                                    ui.add(img.fit_to_original_size(1.0));
+                                });
                         } else {
                             // Fit inside the window without making the window grow.
-                            let avail = ui.available_size().min(Vec2::new(940.0, 560.0)).max(Vec2::splat(64.0));
+                            let avail = ui.available_size().min(Vec2::new(max_w - 40.0, (avail_h - 20.0).max(64.0))).max(Vec2::splat(64.0));
                             ui.centered_and_justified(|ui| {
                                 ui.add(img.max_size(avail).maintain_aspect_ratio(true));
                             });
                         }
                     }
                     ViewerContent::Binary { hex } => {
-                        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                            ui.add(egui::Label::new(RichText::new(hex.as_str()).monospace()).extend());
-                        });
+                        egui::ScrollArea::both()
+                            .auto_shrink([false, false])
+                            .max_height(avail_h)
+                            .show(ui, |ui| {
+                                ui.add(egui::Label::new(RichText::new(hex.as_str()).monospace()).extend());
+                            });
                     }
                     ViewerContent::Text { .. } => self.text_body(ui),
                 }
@@ -510,8 +528,11 @@ impl ViewerState {
         };
 
         let mut changed = false;
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+        let avail_h = ui.available_height();
+        egui::ScrollArea::both()
+            .auto_shrink([false, false])
+            .max_height(avail_h)
+            .show(ui, |ui| {
                 ui.horizontal_top(|ui| {
                     if !wrap {
                         let lines = text.matches('\n').count() + 1;
@@ -525,7 +546,7 @@ impl ViewerState {
                         .code_editor()
                         .interactive(!read_only)
                         .desired_width(f32::INFINITY)
-                        .desired_rows(32)
+                        .desired_rows(1)
                         .lock_focus(true)
                         .layouter(&mut layouter)
                         .show(ui);
@@ -541,7 +562,6 @@ impl ViewerState {
                     }
                 });
             });
-        });
         if changed {
             self.outline_dirty = true;
         }
@@ -572,5 +592,16 @@ mod tests {
         assert!(matches!(classify("a.bin", vec![0, 1, 2]), ViewerContent::Binary { .. }));
         assert!(matches!(classify("a.png", vec![0]), ViewerContent::Image { .. }));
         assert!(prefers_builtin("src/main.cpp") && !prefers_builtin("setup.exe"));
+    }
+
+    #[test]
+    fn viewer_renders_long_file_without_panicking() {
+        let long_text = (1..=1000).map(|i| format!("Line {i}: hello world\n")).collect::<String>();
+        let mut st = ViewerState::new(0, "test.txt".into(), 0, false, long_text.into_bytes(), true);
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            let _ = st.show(ctx);
+        });
+        assert!(st.open);
     }
 }

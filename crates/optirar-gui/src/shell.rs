@@ -60,6 +60,18 @@ pub fn start_drag(_frame: &eframe::Frame, _files: Vec<PathBuf>) -> Result<(), St
     Err("Drag-out is only supported on Windows".into())
 }
 
+/// Copy physical files on disk into the Windows clipboard as CF_HDROP (so user can paste into Explorer).
+#[cfg(windows)]
+pub fn copy_files_to_clipboard(paths: &[PathBuf]) -> Result<(), String> {
+    let file_list: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+    clipboard_win::raw::set_file_list(&file_list).map_err(|e| e.to_string())
+}
+
+#[cfg(not(windows))]
+pub fn copy_files_to_clipboard(_paths: &[PathBuf]) -> Result<(), String> {
+    Err("Clipboard file copy is only supported on Windows".into())
+}
+
 /// Run the bundled Explorer (un)registration script for this executable.
 /// `set_default` also makes OptiRAR the double-click program for archives (WinRAR behaviour).
 pub fn run_shell_script(register: bool, lang: &str, set_default: bool) -> Result<(), String> {

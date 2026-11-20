@@ -125,6 +125,57 @@ impl ArchiveReader for SevenZipReader {
     fn format(&self) -> ArchiveFormat {
         ArchiveFormat::SevenZip
     }
+
+    fn extract_sequential(
+        &mut self,
+        target_indices: &[usize],
+        writer_factory: &mut dyn FnMut(usize, &ArchiveEntry) -> Result<Option<Box<dyn Write>>>,
+    ) -> Result<()> {
+        let mut sz_reader = SevenZReader::open(&self.file_path, self.password.clone())
+            .map_err(|e| OptiError::MalformedArchive(format!("7z open error: {:?}", e)))?;
+
+        let target_set: std::collections::HashSet<usize> = target_indices.iter().copied().collect();
+        let mut current_idx = 0;
+        let mut io_err = None;
+
+        let res = sz_reader.for_each_entries(|_entry, reader| {
+            if target_set.contains(&current_idx) && current_idx < self.entries.len() {
+                match writer_factory(current_idx, &self.entries[current_idx]) {
+                    Ok(Some(mut writer)) => {
+                        let mut buffer = [0u8; 256 * 1024];
+                        loop {
+                            match std::io::Read::read(reader, &mut buffer) {
+                                Ok(0) => break,
+                                Ok(n) => {
+                                    if let Err(e) = writer.write_all(&buffer[..n]) {
+                                        io_err = Some(e);
+                                        return Err(sevenz_rust::Error::other("Write error"));
+                                    }
+                                }
+                                Err(e) => {
+                                    io_err = Some(e);
+                                    return Err(sevenz_rust::Error::other("Read error"));
+                                }
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(_) => {
+                        return Err(sevenz_rust::Error::other("Factory error"));
+                    }
+                }
+            }
+            current_idx += 1;
+            Ok(true)
+        });
+
+        if let Some(e) = io_err {
+            return Err(OptiError::Io(e));
+        }
+
+        res.map_err(|e| OptiError::MalformedArchive(format!("7z extraction error: {:?}", e)))?;
+        Ok(())
+    }
 }
 
 /// 7-Zip creator (LZMA2, optional AES-256 with encrypted headers).

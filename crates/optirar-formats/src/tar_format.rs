@@ -92,6 +92,33 @@ impl ArchiveReader for TarReader {
     fn format(&self) -> ArchiveFormat {
         ArchiveFormat::Tar
     }
+
+    fn extract_sequential(
+        &mut self,
+        target_indices: &[usize],
+        writer_factory: &mut dyn FnMut(usize, &ArchiveEntry) -> Result<Option<Box<dyn Write>>>,
+    ) -> Result<()> {
+        let file = File::open(&self.file_path)?;
+        let mut archive = Archive::new(file);
+        let target_set: std::collections::HashSet<usize> = target_indices.iter().copied().collect();
+        let mut buffer = vec![0u8; 256 * 1024];
+
+        for (idx, entry_res) in archive.entries()?.enumerate() {
+            let mut entry = entry_res?;
+            if target_set.contains(&idx) && idx < self.entries.len() {
+                if let Some(mut writer) = writer_factory(idx, &self.entries[idx])? {
+                    loop {
+                        let n = entry.read(&mut buffer)?;
+                        if n == 0 {
+                            break;
+                        }
+                        writer.write_all(&buffer[..n])?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// TAR archive creator.

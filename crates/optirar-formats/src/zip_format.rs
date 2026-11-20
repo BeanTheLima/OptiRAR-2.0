@@ -216,7 +216,14 @@ impl ArchiveReader for ZipReader {
         }
         .map_err(|e| OptiError::MalformedArchive(format!("ZIP entry read error: {}", e)))?;
 
-        std::io::copy(&mut zip_file, writer)?;
+        let mut buf = vec![0u8; 256 * 1024];
+        loop {
+            let n = zip_file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            writer.write_all(&buf[..n])?;
+        }
         Ok(())
     }
 

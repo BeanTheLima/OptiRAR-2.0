@@ -2,7 +2,7 @@
   "app": {
     "name": "OptiRAR",
     "tagline": "Less overhead. Faster extraction. Maximum efficiency.",
-    "version": "2.0.0"
+    "version": "2.0.1"
   },
   "nav": {
     "home": "Home",
@@ -112,6 +112,7 @@
       "compressed_size": "Archive Size:",
       "ratio": "Compression Ratio:",
       "addressable": "64-Bit Addressable:",
+      "volumes": "Multi-Volume Archive:",
       "close": "Close",
       "location": "Location:"
     },
@@ -206,6 +207,9 @@
     "shell_desc": "Adds an OptiRAR submenu (Open, Extract files..., Extract here, Extract to folder, Test, Add to archive) to the right-click menu and lets you choose OptiRAR in \"Open with\". On Windows 11 it is under \"Show more options\".",
     "register_shell": "Register context menu & associations",
     "unregister_shell": "Remove context menu",
+    "file_associations": "File Associations (Default Archiver)",
+    "set_default_archiver": "Associate OptiRAR with All Archive Formats",
+    "set_default_desc": "Set OptiRAR as the default Windows double-click program for .zip, .rar, .7z, .tar, .gz, .zst.",
     "shell_status_enabled": "Explorer context menu is registered and active.",
     "shell_status_disabled": "Explorer context menu is not registered.",
     "advanced": "Advanced",
@@ -239,6 +243,7 @@
     "extract_to": "Extract to...",
     "extract_here": "Extract here (next to archive)",
     "extract_to_folder": "Extract to \"{name}\\\"",
+    "copy_files": "Copy file(s) to clipboard (Ctrl+C)",
     "copy_name": "Copy name",
     "copy_path": "Copy path in archive",
     "properties": "Archive properties",
@@ -271,7 +276,8 @@
     "shell_failed": "Registration failed: {error}",
     "updating": "Updating {name}...",
     "archive_updated": "Archive updated.",
-    "saved_to": "Saved to {path}"
+    "saved_to": "Saved to {path}",
+    "copied_to_clipboard": "Copied {count} file(s) to clipboard. Paste into Explorer with Ctrl+V."
   },
   "queue": {
     "clear_completed": "Clear finished",

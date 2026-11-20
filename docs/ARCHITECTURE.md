@@ -74,26 +74,29 @@ optirar/
   - `trait ArchiveReader: Send + Sync`:
     - `fn list_entries(&mut self) -> Result<Vec<ArchiveEntry>>;`
     - `fn extract_entry(&mut self, entry_index: usize, writer: &mut dyn Write) -> Result<()>;`
+    - `fn extract_sequential(&mut self, selected_indices: Option<&[usize]>, strip_prefix: Option<&str>, base_output_dir: &Path, on_file_start: &mut dyn FnMut(&str, u64) -> Result<Option<Box<dyn Write>>>, on_file_finish: &mut dyn FnMut(&str, u64) -> Result<()>) -> Result<()>;`
     - `fn is_solid(&self) -> bool;`
     - `fn format(&self) -> ArchiveFormat;`
+    - `fn clone_reader(&self) -> Option<Box<dyn ArchiveReader>>;`
   - `trait ArchiveWriter: Send`:
     - `fn add_file(&mut self, archive_path: &str, source_path: &Path) -> Result<()>;`
     - `fn finish(self: Box<Self>) -> Result<()>;`
-  - Implementations:
-    - `ZipFormat`: Full read, extract, create, and append.
-    - `TarFormat`: Full read, extract, create.
-    - `GzipFormat`: Streaming single-file wrapper.
-    - `ZstdFormat`: High-throughput Zstandard compression and extraction.
-    - `SevenZipFormat`: Pure Rust 7z reader and extractor.
-    - `RarFormat`: Pure Rust RAR4/RAR5 reader and extractor via `unrar-rs`.
+  - **High-Performance Implementations:**
+    - `ZipFormat`: Full read, extract, create, and in-place entry modification/deletion with 256 KB buffer copying. Supports multithreaded Rayon extraction via `clone_reader()`.
+    - `TarFormat`: 1-pass sequential streaming `extract_sequential` (eliminates $O(N^2)$ reopen/rescan).
+    - `ZstdFormat`: 1-pass sequential streaming `extract_sequential` for `.zst` and `.tar.zst`.
+    - `SevenZipFormat`: 1-pass sequential streaming `extract_sequential` with 256 KB buffer.
+    - `RarFormat`: 1-pass sequential streaming `extract_sequential` (single unrar stream pass, eliminating repeated reopen/scan passes).
+    - `FormatDetector`: Magic-byte container detection and multi-volume archive detection (`detect_volume_info`).
 
 ### 2.7 `optirar-engine`
 - **Extraction Orchestration & Parallelism:**
   - `ExtractionEngine`: Main coordinator managing extraction jobs.
   - **Adaptive Execution Modes:**
-    1. *Non-Solid Parallel Mode:* Dispatches file extraction jobs across a Rayon worker pool. Each thread extracts independent files concurrently.
-    2. *Solid Pipelined Mode:* Uses a single decompression worker thread streaming uncompressed bytes into a bounded crossbeam channel, feeding a pool of asynchronous disk writer workers.
-  - `ProgressTracker`: Atomic progress reporting (files completed, bytes processed, current throughput in MB/s, estimated time remaining).
+    1. *Non-Solid Parallel Mode:* Dispatches file extraction jobs across a Rayon worker pool for cloneable formats (ZIP). Each thread extracts independent files concurrently with 256 KB memory buffer pools.
+    2. *Solid & Stream Pipelined Mode:* Uses format-native `extract_sequential` single linear pass, eliminating repeated archive reopening and forward scanning.
+  - `ProgressTracker`: Rate-limited atomic progress reporting (max 25ms / 4MB delta threshold) preventing thread contention, lock stalls, and channel flooding on NVMe multi-gigabyte extractions.
+  - `PreallocatedFileWriter`: Windows `SetFileValidData` / `set_len` preallocation preventing NTFS fragmentation and reducing metadata commits.
   - `CancellationToken`: Thread-safe atomic flag (`Arc<AtomicBool>`) allowing instant, clean cancellation without leaving orphaned file handles.
 
 ### 2.8 `optirar-cli`

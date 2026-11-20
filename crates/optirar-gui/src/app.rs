@@ -557,6 +557,55 @@ impl OptiRarApp {
         self.inject_release = true;
     }
 
+    /// Extract the selected entries to a temp directory and copy their paths to the Windows clipboard (CF_HDROP).
+    fn copy_selection_to_clipboard(&mut self) {
+        let Some(archive_path) = self.archive_path.clone() else { return };
+        let rows: Vec<(String, Vec<usize>)> = self
+            .table
+            .selected_rows(&self.selected_indices)
+            .into_iter()
+            .map(|r| (r.name.clone(), r.indices.clone()))
+            .collect();
+        if rows.is_empty() {
+            return;
+        }
+        let strip = (!self.table.is_searching() && !self.table.nav_path.is_empty()).then(|| self.table.nav_path.clone());
+        let dir = shell::new_temp_dir("clipboard");
+        let mut indices: Vec<usize> = rows.iter().flat_map(|r| r.1.iter().copied()).collect();
+        indices.sort_unstable();
+        indices.dedup();
+
+        let options = ExtractionOptions {
+            output_dir: dir.clone(),
+            selected_indices: Some(indices),
+            strip_prefix: strip,
+            password: self.password.clone(),
+            overwrite_policy: OverwritePolicy::Overwrite,
+            ..Default::default()
+        };
+        let result = OptiExtractor::extract(&archive_path, options, CancellationToken::new(), None::<GuiProgressListener>);
+        match result {
+            Ok(summary) if summary.failed_entries.is_empty() => {
+                let paths: Vec<PathBuf> = rows.iter().map(|(name, _)| dir.join(name.trim_end_matches('/'))).filter(|p| p.exists()).collect();
+                if let Err(e) = shell::copy_files_to_clipboard(&paths) {
+                    self.set_status(Err(e));
+                } else {
+                    self.set_status(Ok(t_format("msg.copied_to_clipboard", &[("count", &paths.len().to_string())])));
+                }
+            }
+            Ok(summary) => {
+                if summary.failed_entries.iter().any(|(_, e)| e.to_lowercase().contains("password")) {
+                    self.password_dialog.is_open = true;
+                    self.last_command = None;
+                    self.set_status(Err(t("msg.password_then_retry")));
+                } else if let Some((p, e)) = summary.failed_entries.first() {
+                    self.set_status(Err(format!("{}: {}", p, e)));
+                }
+            }
+            Err(e) => self.set_status(Err(e.to_string())),
+        }
+    }
+
     fn set_status(&mut self, r: Result<String, String>) {
         match r {
             Ok(m) => {
@@ -897,6 +946,9 @@ impl OptiRarApp {
         }
         if tbl.start_drag && !self.is_busy {
             self.begin_drag(frame);
+        }
+        if tbl.copy_selected_files && !self.is_busy {
+            self.copy_selection_to_clipboard();
         }
     }
 

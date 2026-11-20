@@ -309,22 +309,86 @@ fn main() {
     }
 }
 
-fn handle_list(archive_path: &Path, password: Option<&str>, json_output: bool) {
-    let mut reader = match open_reader(archive_path, password) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error opening archive: {}", e);
-            exit(1);
+fn is_password_err(e: &optirar_core::error::OptiError) -> bool {
+    match e {
+        optirar_core::error::OptiError::PasswordRequired
+        | optirar_core::error::OptiError::InvalidPassword => true,
+        other => {
+            let m = other.to_string().to_lowercase();
+            m.contains("password") || m.contains("encrypted") || m.contains("decrypt")
         }
-    };
+    }
+}
 
-    let entries = match reader.list_entries() {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("Error reading catalog: {}", e);
-            exit(1);
+fn prompt_password(archive_path: &Path) -> Option<String> {
+    let term = console::Term::stdout();
+    if term.is_term() {
+        let name = archive_path.file_name().unwrap_or_default().to_string_lossy();
+        eprint!("🔒 Enter password for '{}': ", name);
+        if let Ok(pw) = term.read_secure_line() {
+            let pw = pw.trim().to_string();
+            if !pw.is_empty() {
+                return Some(pw);
+            }
         }
-    };
+    }
+    None
+}
+
+fn open_reader_with_prompt(
+    archive_path: &Path,
+    mut password: Option<String>,
+) -> (Box<dyn optirar_core::traits::ArchiveReader>, Option<String>) {
+    loop {
+        match open_reader(archive_path, password.as_deref()) {
+            Ok(r) => return (r, password),
+            Err(e) if is_password_err(&e) => {
+                if let Some(pw) = prompt_password(archive_path) {
+                    password = Some(pw);
+                    continue;
+                }
+                eprintln!("Error: Archive is password-protected: {}", e);
+                exit(1);
+            }
+            Err(e) => {
+                eprintln!("Error opening archive: {}", e);
+                exit(1);
+            }
+        }
+    }
+}
+
+fn list_entries_with_prompt(
+    reader: &mut Box<dyn optirar_core::traits::ArchiveReader>,
+    archive_path: &Path,
+    password: &mut Option<String>,
+) -> Vec<optirar_core::types::ArchiveEntry> {
+    loop {
+        match reader.list_entries() {
+            Ok(e) => return e,
+            Err(e) if is_password_err(&e) => {
+                if let Some(pw) = prompt_password(archive_path) {
+                    *password = Some(pw.clone());
+                    if let Ok(new_reader) = open_reader(archive_path, Some(&pw)) {
+                        *reader = new_reader;
+                        continue;
+                    }
+                }
+                eprintln!("Error reading catalog: {}", e);
+                exit(1);
+            }
+            Err(e) => {
+                eprintln!("Error reading catalog: {}", e);
+                exit(1);
+            }
+        }
+    }
+}
+
+fn handle_list(archive_path: &Path, password: Option<&str>, json_output: bool) {
+    let current_pw = password.map(|s| s.to_string());
+    let (mut reader, mut current_pw) = open_reader_with_prompt(archive_path, current_pw);
+    let entries = list_entries_with_prompt(&mut reader, archive_path, &mut current_pw);
 
     let format = reader.format();
     let is_solid = reader.is_solid();
@@ -379,21 +443,13 @@ fn handle_extract(
     keep_broken: bool,
     json_output: bool,
 ) {
-    let mut reader = match open_reader(archive_path, password) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error opening archive: {}", e);
-            exit(1);
-        }
-    };
+    let current_pw = password.map(|s| s.to_string());
+    let (mut reader, mut current_pw) = open_reader_with_prompt(archive_path, current_pw);
+    let entries = list_entries_with_prompt(&mut reader, archive_path, &mut current_pw);
 
-    let entries = match reader.list_entries() {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("Error reading entries: {}", e);
-            exit(1);
-        }
-    };
+    if current_pw.is_none() && entries.iter().any(|e| e.is_encrypted) {
+        current_pw = prompt_password(archive_path);
+    }
 
     let selected_indices: Option<Vec<usize>> = if let Some(query) = files_filter {
         let catalog = ArchiveCatalog::new(reader.format(), entries, reader.is_solid());
@@ -410,7 +466,7 @@ fn handle_extract(
         selected_indices,
         preserve_attributes: true,
         preserve_timestamps: true,
-        password: password.map(|s| s.to_string()),
+        password: current_pw,
         keep_broken,
         strip_prefix: None,
     };
@@ -580,56 +636,60 @@ fn handle_test(archive_path: &Path, password: Option<&str>, json_output: bool) {
         println!("Testing archive integrity: '{}'", archive_path.display());
     }
 
-    match OptiExtractor::test_archive(archive_path, password, cancel_token) {
-        Ok(summary) => {
-            if json_output {
-                println!(
-                    "{}",
-                    json!({
-                        "status": if summary.failed_entries.is_empty() { "ok" } else { "failed" },
-                        "files_tested": summary.files_extracted,
-                        "bytes_tested": summary.bytes_extracted,
-                        "errors": summary.failed_entries
-                    })
-                );
-            } else if summary.failed_entries.is_empty() {
-                println!("Integrity check passed! All {} files verified (CRC32/BLAKE3 OK).", summary.files_extracted);
-                println!("Tested volume: {}", format_bytes(summary.bytes_extracted));
-            } else {
-                eprintln!("Integrity verification FAILED with {} errors:", summary.failed_entries.len());
-                for (file, err) in &summary.failed_entries {
-                    eprintln!("  {} -> {}", file, err);
+    let mut current_pw = password.map(|s| s.to_string());
+    loop {
+        match OptiExtractor::test_archive(archive_path, current_pw.as_deref(), cancel_token.clone()) {
+            Ok(summary) => {
+                if json_output {
+                    println!(
+                        "{}",
+                        json!({
+                            "status": if summary.failed_entries.is_empty() { "ok" } else { "failed" },
+                            "files_tested": summary.files_extracted,
+                            "bytes_tested": summary.bytes_extracted,
+                            "errors": summary.failed_entries
+                        })
+                    );
+                } else if summary.failed_entries.is_empty() {
+                    println!("Integrity check passed! All {} files verified (CRC32/BLAKE3 OK).", summary.files_extracted);
+                    println!("Tested volume: {}", format_bytes(summary.bytes_extracted));
+                } else {
+                    eprintln!("Integrity verification FAILED with {} errors:", summary.failed_entries.len());
+                    for (file, err) in &summary.failed_entries {
+                        eprintln!("  {} -> {}", file, err);
+                    }
+                    exit(2);
                 }
-                exit(2);
+                return;
             }
-        }
-        Err(e) => {
-            if json_output {
-                println!("{}", json!({"status": "error", "message": e.to_string()}));
-            } else {
-                eprintln!("Error testing archive: {}", e);
+            Err(e) if is_password_err(&e) => {
+                if let Some(pw) = prompt_password(archive_path) {
+                    current_pw = Some(pw);
+                    continue;
+                }
+                if json_output {
+                    println!("{}", json!({"status": "error", "message": e.to_string()}));
+                } else {
+                    eprintln!("Error testing archive: {}", e);
+                }
+                exit(1);
             }
-            exit(1);
+            Err(e) => {
+                if json_output {
+                    println!("{}", json!({"status": "error", "message": e.to_string()}));
+                } else {
+                    eprintln!("Error testing archive: {}", e);
+                }
+                exit(1);
+            }
         }
     }
 }
 
 fn handle_info(archive_path: &Path, password: Option<&str>, json_output: bool) {
-    let mut reader = match open_reader(archive_path, password) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            exit(1);
-        }
-    };
-
-    let entries = match reader.list_entries() {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("Error reading archive: {}", e);
-            exit(1);
-        }
-    };
+    let current_pw = password.map(|s| s.to_string());
+    let (mut reader, mut current_pw) = open_reader_with_prompt(archive_path, current_pw);
+    let entries = list_entries_with_prompt(&mut reader, archive_path, &mut current_pw);
 
     let format = reader.format();
     let is_solid = reader.is_solid();
@@ -707,21 +767,13 @@ fn handle_smart_extract(
     password: Option<&str>,
     overwrite: OverwritePolicy,
 ) {
-    let mut reader = match open_reader(archive_path, password) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error opening archive: {}", e);
-            exit(1);
-        }
-    };
+    let current_pw = password.map(|s| s.to_string());
+    let (mut reader, mut current_pw) = open_reader_with_prompt(archive_path, current_pw);
+    let entries = list_entries_with_prompt(&mut reader, archive_path, &mut current_pw);
 
-    let entries = match reader.list_entries() {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("Error reading archive entries: {}", e);
-            exit(1);
-        }
-    };
+    if current_pw.is_none() && entries.iter().any(|e| e.is_encrypted) {
+        current_pw = prompt_password(archive_path);
+    }
 
     let target_dest = compute_smart_destination(archive_path, output_base, &entries);
     println!(
@@ -736,7 +788,7 @@ fn handle_smart_extract(
         selected_indices: None,
         preserve_attributes: true,
         preserve_timestamps: true,
-        password: password.map(|s| s.to_string()),
+        password: current_pw,
         keep_broken: false,
         strip_prefix: None,
     };
