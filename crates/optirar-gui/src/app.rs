@@ -35,7 +35,7 @@ use crate::views::viewer::{self, ViewerState};
 use crate::views::welcome::WelcomeView;
 use crate::worker::{AddItem, GuiProgressListener, WorkerCommand, WorkerEvent, WorkerHandle, PASSWORD_REQUIRED};
 
-const ARCHIVE_EXTS: &[&str] = &["zip", "rar", "7z", "tar", "gz", "tgz", "zst", "tzst", "cbz", "cbr", "cb7"];
+const ARCHIVE_EXTS: &[&str] = &["orr", "zip", "rar", "7z", "tar", "gz", "tgz", "zst", "tzst", "cbz", "cbr", "cb7"];
 
 /// One-shot actions launched from the Explorer context menu (window closes when done, like WinRAR).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -51,6 +51,9 @@ impl ProgressTracker {
 
     /// Record newly extracted bytes and notify listeners (rate-throttled to avoid thread contention).
     pub fn record_bytes(&self, bytes: u64, current_file: &str) {
+        if bytes == 0 {
+            return;
+        }
         let new_bytes = self.bytes_completed.fetch_add(bytes, Ordering::Relaxed) + bytes;
         if self.listeners.is_empty() {
             return;

@@ -1,5 +1,6 @@
 use crate::detector::FormatDetector;
 use crate::gzip_format::{GzipReader, GzipWriterWrapper};
+use crate::orr_format::{OrrReader, OrrWriter};
 use crate::rar_format::RarReader;
 use crate::sevenz_format::{SevenZipReader, SevenZipWriterWrapper};
 use crate::tar_format::{TarReader, TarWriterWrapper};
@@ -19,6 +20,7 @@ pub fn open_reader<P: AsRef<Path>>(
     let format = FormatDetector::detect(path_ref)?;
 
     match format {
+        ArchiveFormat::Orr => Ok(Box::new(OrrReader::open(path_ref)?)),
         ArchiveFormat::Zip => Ok(Box::new(ZipReader::open_with_password(path_ref, password)?)),
         ArchiveFormat::Tar => Ok(Box::new(TarReader::open(path_ref)?)),
         ArchiveFormat::Gzip => Ok(Box::new(GzipReader::open(path_ref)?)),
@@ -51,6 +53,7 @@ pub fn create_writer_with_password<P: AsRef<Path>>(
         return Err(OptiError::Internal(format!("{} does not support passwords", format.name())));
     }
     match format {
+        ArchiveFormat::Orr => Ok(Box::new(OrrWriter::create(path_ref, level)?)),
         ArchiveFormat::Zip => Ok(Box::new(CustomZipWriter::create_with_password(path_ref, level, password)?)),
         ArchiveFormat::Tar => Ok(Box::new(TarWriterWrapper::create(path_ref)?)),
         ArchiveFormat::Gzip => Ok(Box::new(GzipWriterWrapper::create(path_ref, level)?)),

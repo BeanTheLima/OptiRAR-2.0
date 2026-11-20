@@ -8,7 +8,7 @@ use std::sync::Arc;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-const CACHE: usize = 16 * 1024;
+const CACHE: usize = 64 * 1024;
 
 /// Clonable positional reader. Clones share one OS handle but keep their own cursor and a
 /// small read cache, so `Seek` costs no I/O (the zip crate seeks to every local header) and
@@ -97,6 +97,7 @@ impl Seek for SharedFile {
 pub struct ZipReader {
     archive: ZipArchive<SharedFile>,
     password: Option<String>,
+    buffer: Vec<u8>,
 }
 
 impl ZipReader {
@@ -110,6 +111,7 @@ impl ZipReader {
         Ok(Self {
             archive,
             password: password.filter(|p| !p.is_empty()).map(String::from),
+            buffer: Vec::new(),
         })
     }
 }
@@ -216,13 +218,16 @@ impl ArchiveReader for ZipReader {
         }
         .map_err(|e| OptiError::MalformedArchive(format!("ZIP entry read error: {}", e)))?;
 
-        let mut buf = vec![0u8; 256 * 1024];
+        const CHUNK_SIZE: usize = 512 * 1024;
+        if self.buffer.len() < CHUNK_SIZE {
+            self.buffer.resize(CHUNK_SIZE, 0);
+        }
         loop {
-            let n = zip_file.read(&mut buf)?;
+            let n = zip_file.read(&mut self.buffer)?;
             if n == 0 {
                 break;
             }
-            writer.write_all(&buf[..n])?;
+            writer.write_all(&self.buffer[..n])?;
         }
         Ok(())
     }
@@ -236,7 +241,11 @@ impl ArchiveReader for ZipReader {
     }
 
     fn try_clone(&self) -> Option<Box<dyn ArchiveReader>> {
-        Some(Box::new(ZipReader { archive: self.archive.clone(), password: self.password.clone() }))
+        Some(Box::new(ZipReader {
+            archive: self.archive.clone(),
+            password: self.password.clone(),
+            buffer: Vec::new(),
+        }))
     }
 }
 
@@ -256,13 +265,13 @@ mod time_tests {
         std::fs::write(&path, &data).unwrap();
         let mut f = super::SharedFile::open(&path).unwrap();
         let mut small = [0u8; 10];
-        f.seek(SeekFrom::Start(16_380)).unwrap(); // straddles the cache boundary
+        f.seek(SeekFrom::Start(65_530)).unwrap(); // straddles the 64KB cache boundary
         f.read_exact(&mut small).unwrap();
-        assert_eq!(&small[..], &data[16_380..16_390]);
+        assert_eq!(&small[..], &data[65_530..65_540]);
         let mut g = f.clone();
         let mut rest = Vec::new();
         g.read_to_end(&mut rest).unwrap();
-        assert_eq!(&rest[..], &data[16_390..]);
+        assert_eq!(&rest[..], &data[65_540..]);
         f.seek(SeekFrom::End(-5)).unwrap();
         f.read_exact(&mut small[..5]).unwrap();
         assert_eq!(&small[..5], &data[data.len() - 5..]);

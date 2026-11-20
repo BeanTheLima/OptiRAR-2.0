@@ -34,7 +34,7 @@ impl PreallocatedFileWriter {
             let _ = file.set_len(expected_size);
         }
 
-        let writer = BufWriter::with_capacity(buffer_size.max(64 * 1024), file);
+        let writer = BufWriter::with_capacity(buffer_size.max(256 * 1024), file);
 
         Ok(Self {
             writer,
@@ -57,11 +57,22 @@ impl PreallocatedFileWriter {
     pub fn finalize(mut self) -> Result<u64> {
         self.writer.flush()?;
         let file = self.writer.get_mut();
-        // If written bytes were less than expected, adjust file length accurately.
+        // If written bytes were different from expected, adjust file length accurately.
         if self.bytes_written != self.expected_size {
             let _ = file.set_len(self.bytes_written);
+            self.expected_size = self.bytes_written;
         }
         Ok(self.bytes_written)
+    }
+}
+
+impl Drop for PreallocatedFileWriter {
+    fn drop(&mut self) {
+        let _ = self.writer.flush();
+        if self.bytes_written != self.expected_size {
+            let file = self.writer.get_mut();
+            let _ = file.set_len(self.bytes_written);
+        }
     }
 }
 

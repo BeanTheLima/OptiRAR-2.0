@@ -78,7 +78,7 @@ enum Commands {
         /// Source files or directories to include
         #[arg(required = true)]
         sources: Vec<PathBuf>,
-        /// Container format (zip, tar, gz, zst)
+        /// Container format (orr, zip, tar, gz, zst)
         #[arg(short, long)]
         format: Option<CliFormat>,
         /// Compression level
@@ -219,6 +219,7 @@ impl From<CliLevel> for CompressionLevel {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 enum CliFormat {
+    Orr,
     Zip,
     Tar,
     Gzip,
@@ -228,6 +229,7 @@ enum CliFormat {
 impl From<CliFormat> for ArchiveFormat {
     fn from(f: CliFormat) -> Self {
         match f {
+            CliFormat::Orr => ArchiveFormat::Orr,
             CliFormat::Zip => ArchiveFormat::Zip,
             CliFormat::Tar => ArchiveFormat::Tar,
             CliFormat::Gzip => ArchiveFormat::Gzip,
@@ -570,7 +572,7 @@ fn handle_create(
             "Error: Creating {} archives is not supported or prohibited by license.",
             format.name()
         );
-        eprintln!("OptiRAR supports creating ZIP, TAR, GZ, and ZSTD archives.");
+        eprintln!("OptiRAR supports creating ORR, ZIP, TAR, GZ, and ZSTD archives.");
         exit(1);
     }
 

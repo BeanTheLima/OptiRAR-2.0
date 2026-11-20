@@ -25,12 +25,9 @@ impl SevenZipReader {
             .map_err(|e| OptiError::MalformedArchive(format!("7z open error: {:?}", e)))?;
 
         let mut entries = Vec::new();
-        let mut is_solid = false;
-
         let archive = sz_reader.archive();
-        if !archive.folders.is_empty() {
-            is_solid = archive.folders.iter().any(|f| f.num_unpack_sub_streams > 1);
-        }
+        let file_count = archive.files.iter().filter(|f| !f.is_directory).count();
+        let is_solid = file_count > 1;
 
         for (idx, entry) in archive.files.iter().enumerate() {
             let path_str = entry.name.clone();
@@ -88,7 +85,7 @@ impl ArchiveReader for SevenZipReader {
             .for_each_entries(|_entry, reader| {
                 if current_idx == entry_index {
                     found = true;
-                    let mut buffer = [0u8; 128 * 1024];
+                    let mut buffer = [0u8; 256 * 1024];
                     loop {
                         let n = std::io::Read::read(reader, &mut buffer).map_err(|e| {
                             sevenz_rust::Error::other(format!("Read error: {}", e))
@@ -103,6 +100,7 @@ impl ArchiveReader for SevenZipReader {
                     Ok(false)
                 } else {
                     current_idx += 1;
+                    let _ = std::io::copy(reader, &mut std::io::sink());
                     Ok(true)
                 }
             })
@@ -124,6 +122,19 @@ impl ArchiveReader for SevenZipReader {
 
     fn format(&self) -> ArchiveFormat {
         ArchiveFormat::SevenZip
+    }
+
+    fn try_clone(&self) -> Option<Box<dyn ArchiveReader>> {
+        if self.is_solid {
+            None
+        } else {
+            Some(Box::new(Self {
+                file_path: self.file_path.clone(),
+                password: self.password.clone(),
+                entries: self.entries.clone(),
+                is_solid: self.is_solid,
+            }))
+        }
     }
 
     fn extract_sequential(
@@ -164,6 +175,8 @@ impl ArchiveReader for SevenZipReader {
                         return Err(sevenz_rust::Error::other("Factory error"));
                     }
                 }
+            } else {
+                let _ = std::io::copy(reader, &mut std::io::sink());
             }
             current_idx += 1;
             Ok(true)

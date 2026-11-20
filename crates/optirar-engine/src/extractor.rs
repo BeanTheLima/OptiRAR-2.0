@@ -128,7 +128,7 @@ impl OptiExtractor {
                     }
                 }
 
-                let buffer_size = options.profile.buffer_size_bytes().max(256 * 1024);
+                let buffer_size = options.profile.buffer_size_bytes().max(512 * 1024);
                 let preallocated_writer = match PreallocatedFileWriter::create(
                     &dest,
                     entry.uncompressed_size,
@@ -154,6 +154,7 @@ impl OptiExtractor {
                     total_written: Arc::clone(&total_written_clone),
                     total_count: Arc::clone(&total_count_clone),
                     failed_entries: Arc::clone(&failed_entries_clone),
+                    unreported_bytes: 0,
                 };
 
                 Ok(Some(Box::new(writer)))
@@ -231,7 +232,7 @@ impl OptiExtractor {
                             }
                         };
 
-                        let buffer_size = options_arc.profile.buffer_size_bytes().max(256 * 1024);
+                        let buffer_size = options_arc.profile.buffer_size_bytes().max(512 * 1024);
                         let mut preallocated_writer = match PreallocatedFileWriter::create(
                             &dest,
                             entry.uncompressed_size,
@@ -254,9 +255,12 @@ impl OptiExtractor {
                             tracker: &tracker_arc,
                             current_path: &entry.path,
                             bytes_written: 0,
+                            unreported_bytes: 0,
                         };
 
                         let extract_res = thread_reader.extract_entry(idx, &mut tracking_writer);
+                        let _ = tracking_writer.flush();
+                        drop(tracking_writer);
 
                         if let Err(e) = extract_res {
                             if !options_arc.keep_broken && dest.exists() {
@@ -328,34 +332,108 @@ impl OptiExtractor {
         let mut success_count = 0;
         let mut failed = Vec::new();
 
-        for (idx, entry) in entries.iter().enumerate() {
-            if cancel_token.is_cancelled() {
-                return Err(OptiError::OperationCancelled);
-            }
-            if entry.is_directory {
-                continue;
-            }
+        if reader.is_solid() {
+            let target_indices: Vec<usize> = entries
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| !e.is_directory)
+                .map(|(i, _)| i)
+                .collect();
 
-            let mut verifier = ChecksumVerifier::new();
-            let mut null_writer = NullVerifierWriter {
-                verifier: &mut verifier,
-                bytes: 0,
-            };
+            let failed_arc = Arc::new(Mutex::new(Vec::new()));
+            let total_bytes_arc = Arc::new(AtomicU64::new(0));
+            let success_count_arc = Arc::new(AtomicUsize::new(0));
 
-            let extract_res = reader.extract_entry(idx, &mut null_writer);
-            let written_bytes = null_writer.bytes;
+            let failed_clone = Arc::clone(&failed_arc);
+            let bytes_clone = Arc::clone(&total_bytes_arc);
+            let success_clone = Arc::clone(&success_count_arc);
 
-            match extract_res {
-                Ok(_) => {
-                    if let Err(e) = verifier.verify_crc32(&entry.path, entry.crc32) {
-                        failed.push((entry.path.clone(), e.to_string()));
-                    } else {
-                        success_count += 1;
-                        total_bytes += written_bytes;
+            reader.extract_sequential(&target_indices, &mut |_idx, entry| {
+                if cancel_token.is_cancelled() {
+                    return Err(OptiError::OperationCancelled);
+                }
+                let expected_crc = entry.crc32;
+                let path = entry.path.clone();
+                let failed_ref = Arc::clone(&failed_clone);
+                let bytes_ref = Arc::clone(&bytes_clone);
+                let success_ref = Arc::clone(&success_clone);
+
+                struct SeqNullWriter {
+                    verifier: ChecksumVerifier,
+                    expected_crc: Option<u32>,
+                    path: String,
+                    bytes: u64,
+                    failed: Arc<Mutex<Vec<(String, String)>>>,
+                    bytes_acc: Arc<AtomicU64>,
+                    success_acc: Arc<AtomicUsize>,
+                }
+
+                impl std::io::Write for SeqNullWriter {
+                    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                        self.verifier.update(buf);
+                        self.bytes += buf.len() as u64;
+                        Ok(buf.len())
+                    }
+                    fn flush(&mut self) -> std::io::Result<()> {
+                        Ok(())
                     }
                 }
-                Err(e) => {
-                    failed.push((entry.path.clone(), e.to_string()));
+
+                impl Drop for SeqNullWriter {
+                    fn drop(&mut self) {
+                        if let Err(e) = self.verifier.verify_crc32(&self.path, self.expected_crc) {
+                            self.failed.lock().unwrap().push((self.path.clone(), e.to_string()));
+                        } else {
+                            self.success_acc.fetch_add(1, Ordering::Relaxed);
+                            self.bytes_acc.fetch_add(self.bytes, Ordering::Relaxed);
+                        }
+                    }
+                }
+
+                Ok(Some(Box::new(SeqNullWriter {
+                    verifier: ChecksumVerifier::new(),
+                    expected_crc,
+                    path,
+                    bytes: 0,
+                    failed: failed_ref,
+                    bytes_acc: bytes_ref,
+                    success_acc: success_ref,
+                })))
+            })?;
+
+            failed = failed_arc.lock().unwrap().clone();
+            total_bytes = total_bytes_arc.load(Ordering::Relaxed);
+            success_count = success_count_arc.load(Ordering::Relaxed);
+        } else {
+            for (idx, entry) in entries.iter().enumerate() {
+                if cancel_token.is_cancelled() {
+                    return Err(OptiError::OperationCancelled);
+                }
+                if entry.is_directory {
+                    continue;
+                }
+
+                let mut verifier = ChecksumVerifier::new();
+                let mut null_writer = NullVerifierWriter {
+                    verifier: &mut verifier,
+                    bytes: 0,
+                };
+
+                let extract_res = reader.extract_entry(idx, &mut null_writer);
+                let written_bytes = null_writer.bytes;
+
+                match extract_res {
+                    Ok(_) => {
+                        if let Err(e) = verifier.verify_crc32(&entry.path, entry.crc32) {
+                            failed.push((entry.path.clone(), e.to_string()));
+                        } else {
+                            success_count += 1;
+                            total_bytes += written_bytes;
+                        }
+                    }
+                    Err(e) => {
+                        failed.push((entry.path.clone(), e.to_string()));
+                    }
                 }
             }
         }
@@ -378,6 +456,8 @@ impl OptiExtractor {
     }
 }
 
+const PROGRESS_BATCH_THRESHOLD: u64 = 256 * 1024;
+
 struct SequentialStreamWriter {
     inner: PreallocatedFileWriter,
     verifier: ChecksumVerifier,
@@ -391,25 +471,35 @@ struct SequentialStreamWriter {
     total_written: Arc<AtomicU64>,
     total_count: Arc<AtomicUsize>,
     failed_entries: Arc<Mutex<Vec<(String, String)>>>,
+    unreported_bytes: u64,
 }
 
 impl std::io::Write for SequentialStreamWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let n = self.inner.write(buf)?;
         self.verifier.update(&buf[..n]);
-        let _ = self.bomb_detector.record_bytes(n as u64 / 2 + 1, n as u64);
-        self.tracker.record_bytes(n as u64, &self.entry_path);
+        let written = n as u64;
+        let _ = self.bomb_detector.record_bytes(written / 2 + 1, written);
+        self.unreported_bytes += written;
+        if self.unreported_bytes >= PROGRESS_BATCH_THRESHOLD {
+            self.tracker.record_bytes(self.unreported_bytes, &self.entry_path);
+            self.unreported_bytes = 0;
+        }
         Ok(n)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
+        if self.unreported_bytes > 0 {
+            self.tracker.record_bytes(self.unreported_bytes, &self.entry_path);
+            self.unreported_bytes = 0;
+        }
         self.inner.flush()
     }
 }
 
 impl Drop for SequentialStreamWriter {
     fn drop(&mut self) {
-        let _ = self.inner.flush();
+        let _ = self.flush();
 
         if let Err(e) = self.verifier.verify_crc32(&self.entry_path, self.expected_crc) {
             if !self.keep_broken && self.dest_path.exists() {
@@ -433,20 +523,39 @@ struct TrackingWriter<'a> {
     tracker: &'a ProgressTracker,
     current_path: &'a str,
     bytes_written: u64,
+    unreported_bytes: u64,
 }
 
 impl<'a> std::io::Write for TrackingWriter<'a> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let n = self.inner.write(buf)?;
         self.verifier.update(&buf[..n]);
-        let _ = self.bomb_detector.record_bytes(n as u64 / 2 + 1, n as u64);
-        self.tracker.record_bytes(n as u64, self.current_path);
-        self.bytes_written += n as u64;
+        let written = n as u64;
+        let _ = self.bomb_detector.record_bytes(written / 2 + 1, written);
+        self.bytes_written += written;
+        self.unreported_bytes += written;
+        if self.unreported_bytes >= PROGRESS_BATCH_THRESHOLD {
+            self.tracker.record_bytes(self.unreported_bytes, self.current_path);
+            self.unreported_bytes = 0;
+        }
         Ok(n)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
+        if self.unreported_bytes > 0 {
+            self.tracker.record_bytes(self.unreported_bytes, self.current_path);
+            self.unreported_bytes = 0;
+        }
         self.inner.flush()
+    }
+}
+
+impl<'a> Drop for TrackingWriter<'a> {
+    fn drop(&mut self) {
+        if self.unreported_bytes > 0 {
+            self.tracker.record_bytes(self.unreported_bytes, self.current_path);
+            self.unreported_bytes = 0;
+        }
     }
 }
 

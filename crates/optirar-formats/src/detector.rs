@@ -23,6 +23,11 @@ impl FormatDetector {
         };
 
         if bytes_read >= 8 {
+            // Check OptiRAR: OPTIRAR\x01
+            if &magic[0..8] == b"OPTIRAR\x01" {
+                return Ok(ArchiveFormat::Orr);
+            }
+
             // Check RAR5: 52 61 72 21 1A 07 01 00
             if magic[0..8] == [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00] {
                 return Ok(ArchiveFormat::Rar5);

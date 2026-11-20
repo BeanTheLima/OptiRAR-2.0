@@ -182,3 +182,69 @@ fn test_cancellation_token() {
 
     assert!(res.is_err());
 }
+
+#[test]
+fn test_orr_roundtrip_integration() {
+    let dir = tempdir().unwrap();
+    let src_dir = dir.path().join("src_orr");
+    fs::create_dir(&src_dir).unwrap();
+
+    let f1 = src_dir.join("file1.txt");
+    let f2 = src_dir.join("file2.bin");
+    fs::write(&f1, "OptiRAR native format (.orr) compressor integration test").unwrap();
+    fs::write(&f2, vec![77u8; 500_000]).unwrap();
+
+    let archive_path = dir.path().join("archive.orr");
+    let sources = vec![f1.clone(), f2.clone()];
+
+    // 1. Compress with OptiCompressor using ArchiveFormat::Orr
+    let summary = OptiCompressor::create_archive(
+        &archive_path,
+        &sources,
+        ArchiveFormat::Orr,
+        CompressionLevel::Normal,
+        CancellationToken::new(),
+        None::<fn(&optirar_core::traits::ProgressSnapshot)>,
+    ).expect("ORR compression failed");
+
+    assert_eq!(summary.files_added, 2);
+    assert_eq!(summary.archive_format, ArchiveFormat::Orr);
+    assert!(archive_path.exists());
+
+    // 2. Inspect with open_reader
+    let mut reader = open_reader(&archive_path, None).expect("Open reader failed");
+    assert_eq!(reader.format(), ArchiveFormat::Orr);
+    assert!(!reader.is_solid());
+    let entries = reader.list_entries().expect("List entries failed");
+    assert_eq!(entries.len(), 2);
+
+    // 3. Extract with OptiExtractor
+    let out_dir = dir.path().join("extracted_orr");
+    let options = ExtractionOptions {
+        output_dir: out_dir.clone(),
+        overwrite_policy: OverwritePolicy::Overwrite,
+        profile: CompressionProfile::Performance,
+        selected_indices: None,
+        preserve_attributes: true,
+        preserve_timestamps: true,
+        password: None,
+        keep_broken: false,
+        strip_prefix: None,
+    };
+
+    let ext_summary = OptiExtractor::extract(
+        &archive_path,
+        options,
+        CancellationToken::new(),
+        None::<fn(&optirar_core::traits::ProgressSnapshot)>,
+    ).expect("ORR extraction failed");
+
+    assert_eq!(ext_summary.files_extracted, 2);
+    assert_eq!(ext_summary.failed_entries.len(), 0);
+
+    // 4. Verify contents
+    let read1 = fs::read_to_string(out_dir.join("file1.txt")).unwrap();
+    let read2 = fs::read(out_dir.join("file2.bin")).unwrap();
+    assert_eq!(read1, "OptiRAR native format (.orr) compressor integration test");
+    assert_eq!(read2, vec![77u8; 500_000]);
+}

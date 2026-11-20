@@ -11,6 +11,7 @@ pub enum ArchiveFormat {
     SevenZip,
     Rar4,
     Rar5,
+    Orr,
     Unknown,
 }
 
@@ -25,6 +26,7 @@ impl ArchiveFormat {
             ArchiveFormat::SevenZip => "7-Zip",
             ArchiveFormat::Rar4 => "RAR 4.x",
             ArchiveFormat::Rar5 => "RAR 5.x",
+            ArchiveFormat::Orr => "OptiRAR Archive (.orr)",
             ArchiveFormat::Unknown => "Unknown",
         }
     }
@@ -38,6 +40,7 @@ impl ArchiveFormat {
             ArchiveFormat::Zstd => &["zst", "tzst", "tar.zst"],
             ArchiveFormat::SevenZip => &["7z", "cb7"],
             ArchiveFormat::Rar4 | ArchiveFormat::Rar5 => &["rar", "cbr"],
+            ArchiveFormat::Orr => &["orr"],
             ArchiveFormat::Unknown => &[],
         }
     }
@@ -49,7 +52,8 @@ impl ArchiveFormat {
             | ArchiveFormat::Tar
             | ArchiveFormat::Gzip
             | ArchiveFormat::Zstd
-            | ArchiveFormat::SevenZip => true,
+            | ArchiveFormat::SevenZip
+            | ArchiveFormat::Orr => true,
             ArchiveFormat::Rar4 | ArchiveFormat::Rar5 | ArchiveFormat::Unknown => false,
         }
     }
@@ -72,6 +76,7 @@ impl ArchiveFormat {
             "zst" | "tzst" => ArchiveFormat::Zstd,
             "7z" | "cb7" => ArchiveFormat::SevenZip,
             "rar" | "cbr" => ArchiveFormat::Rar5, // default to RAR5 until magic bytes parsed
+            "orr" => ArchiveFormat::Orr,
             _ => ArchiveFormat::Unknown,
         }
     }

@@ -2,7 +2,7 @@ use optirar_core::error::{OptiError, Result};
 use optirar_core::traits::ArchiveReader;
 use optirar_core::types::{ArchiveEntry, ArchiveFormat};
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use unrar_rs::RarArchive;
 
@@ -18,8 +18,9 @@ impl RarReader {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_buf = path.as_ref().to_path_buf();
         let file = File::open(&path_buf)?;
+        let buf_reader = BufReader::with_capacity(256 * 1024, file);
 
-        let archive = RarArchive::open(file)
+        let archive = RarArchive::open(buf_reader)
             .map_err(|e| OptiError::MalformedArchive(format!("RAR open error: {:?}", e)))?;
 
         let mut entries = Vec::new();
@@ -82,7 +83,8 @@ impl ArchiveReader for RarReader {
 
     fn extract_entry(&mut self, entry_index: usize, writer: &mut dyn Write) -> Result<()> {
         let file = File::open(&self.file_path)?;
-        let mut archive = RarArchive::open(file)
+        let buf_reader = BufReader::with_capacity(256 * 1024, file);
+        let mut archive = RarArchive::open(buf_reader)
             .map_err(|e| OptiError::MalformedArchive(format!("RAR open error: {:?}", e)))?;
 
         let entry = archive
@@ -104,13 +106,27 @@ impl ArchiveReader for RarReader {
         self.format
     }
 
+    fn try_clone(&self) -> Option<Box<dyn ArchiveReader>> {
+        if self.is_solid {
+            None
+        } else {
+            Some(Box::new(Self {
+                file_path: self.file_path.clone(),
+                entries: self.entries.clone(),
+                is_solid: self.is_solid,
+                format: self.format,
+            }))
+        }
+    }
+
     fn extract_sequential(
         &mut self,
         target_indices: &[usize],
         writer_factory: &mut dyn FnMut(usize, &ArchiveEntry) -> Result<Option<Box<dyn Write>>>,
     ) -> Result<()> {
         let file = File::open(&self.file_path)?;
-        let mut archive = RarArchive::open(file)
+        let buf_reader = BufReader::with_capacity(256 * 1024, file);
+        let mut archive = RarArchive::open(buf_reader)
             .map_err(|e| OptiError::MalformedArchive(format!("RAR open error: {:?}", e)))?;
 
         for &idx in target_indices {

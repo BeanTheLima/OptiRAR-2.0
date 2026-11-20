@@ -19,6 +19,15 @@ ruzstd.workspace = true
 sevenz-rust.workspace = true
 unrar-rs.workspace = true
 tracing.workspace = true
+zstd = "0.14.4"
+blake3.workspace = true
+crc32fast.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rayon.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Globalization"] }

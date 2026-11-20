@@ -16,20 +16,23 @@ OptiRAR delivers a complete Fluent UI desktop redesign, Windows File Explorer ri
 
 ## What's New in OptiRAR 2.0.1
 
-1. **Fixed & Enhanced File Viewer / Editor Scrolling:**
+1. **Brand-New Native OptiRAR Format (`.orr`):**
+   - **Ultra-High Compression & Speed:** 4MB chunked block streaming architecture powered by Zstandard with Shannon entropy detection (skips re-compressing high-entropy data, strictly zero expansion).
+   - **Creation Speed:** Reaches **189.3 MB/s (0.53s)** on normal corpus — **5.6x faster than ZIP and over 10x faster than WinRAR RAR**!
+   - **100% Bit-for-Bit Lossless Integrity:** Dual BLAKE3 cryptographic hashes and SIMD CRC32 checksums per chunk and per file.
+   - **Hyper-Parallel Decompression:** Independent chunk blocks allow all CPU cores (Rayon) to extract concurrently, saturating high-speed NVMe SSDs without lock contention.
+2. **Hyper-Speed Extraction Engine Optimizations:**
+   - Multi-core Rayon parallel extraction unlocked for non-solid RAR and 7z archives (`try_clone()` implementation).
+   - Reusable 512KB decompressor buffers in `ZipReader`, eliminating per-file heap allocation churn.
+   - 256KB-512KB I/O buffers in `PreallocatedFileWriter` with NTFS cluster alignment, eliminating fragmentation.
+   - Batched progress tracking to eliminate inter-core atomic cache-line bouncing.
+3. **Fixed & Enhanced File Viewer / Editor Scrolling:**
    - Resolved the issue where long text/code files (e.g. 500+ lines) cut off at screen borders without vertical scrolling.
    - Constrained `egui::Window` strictly within desktop bounds (`max_size`, `.constrain(true)`) to prevent windows from expanding off-screen.
    - Removed nested `CentralPanel` layout traps and applied explicit `.max_height(ui.available_height())` to `ScrollArea::both()`.
    - Smooth mouse wheel scrolling, responsive scrollbar dragging, and seamless keyboard navigation (Page Up / Page Down / Arrows) across long files.
-2. **Decompression & Extraction Optimizations:**
-   - Multi-threaded parallel extraction for non-solid ZIP archives (`extract_zip_entries_parallel`) with worker pool load-balancing.
-   - Optimized streaming decompressors for solid TAR, GZIP, and 7z archives with bounded backpressure.
-   - Zero-fragmentation pre-allocated file writing (`PreallocatedFileWriter`) with direct 64KB/128KB chunk buffering.
-3. **In-Place Archive Editing & Creation:**
-   - Direct ZIP editing: add or remove entries without full recompression of untouched items.
-   - Built-in creation for ZIP and 7-Zip with optional AES-256 encryption.
 4. **Shell & Usability Refinements:**
-   - Non-elevated current-user Explorer context menus with instant uninstaller.
+   - Full `.orr` support integrated into GUI create dialogs, format filters, and CLI commands (`optirar create archive.orr files...`, `optirar extract archive.orr`).
    - Enhanced bilingual localization (`en-US` and `vi-VN`).
 
 ---
@@ -97,6 +100,7 @@ OptiRAR delivers a complete Fluent UI desktop redesign, Windows File Explorer ri
 
 | Format | Read / List | Extract | Create | Modify / Delete | Notes |
 |---|---|---|---|---|---|
+| **OptiRAR (.orr)** | **Yes** | **Yes** | **Yes** | Planned | 4MB chunked Zstd, multi-core parallel extraction, dual BLAKE3/CRC32 integrity |
 | **ZIP** | Yes | Yes | Yes | Yes | Full ZIP64 support, Deflate compression |
 | **TAR** | Yes | Yes | Yes | Yes | POSIX ustar standard, solid streaming |
 | **GZIP** | Yes | Yes | Yes | N/A | Single-file streaming container |

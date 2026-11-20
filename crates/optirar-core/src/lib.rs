@@ -27,6 +27,7 @@ mod tests {
         assert_eq!(ArchiveFormat::from_extension("rar"), ArchiveFormat::Rar5);
         assert_eq!(ArchiveFormat::from_extension("7z"), ArchiveFormat::SevenZip);
         assert_eq!(ArchiveFormat::from_extension("tar"), ArchiveFormat::Tar);
+        assert_eq!(ArchiveFormat::from_extension("orr"), ArchiveFormat::Orr);
     }
 
     #[test]

@@ -44,6 +44,7 @@ impl CreateDialogState {
 
 pub fn format_ext(format: ArchiveFormat) -> &'static str {
     match format {
+        ArchiveFormat::Orr => "orr",
         ArchiveFormat::Tar => "tar",
         ArchiveFormat::Gzip => "gz",
         ArchiveFormat::Zstd => "zst",
@@ -158,6 +159,7 @@ impl DialogsView {
                 ComboBox::from_id_salt("create_format_combo")
                     .selected_text(format_ext(state.format).to_uppercase())
                     .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut state.format, ArchiveFormat::Orr, "OptiRAR (.orr)");
                         ui.selectable_value(&mut state.format, ArchiveFormat::Zip, "ZIP (.zip)");
                         ui.selectable_value(&mut state.format, ArchiveFormat::SevenZip, "7-Zip (.7z)");
                         ui.selectable_value(&mut state.format, ArchiveFormat::Tar, "TAR (.tar)");
